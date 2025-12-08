@@ -1,0 +1,10 @@
+services:
+  alertmanager-teams-adapter:
+    build: .
+    container_name: alertmanager-teams-adapter
+    environment:
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL}
+      - PORT=8080
+    ports:
+      - "2000:8080"
+    restart: always
