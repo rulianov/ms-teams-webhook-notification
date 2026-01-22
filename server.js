@@ -54,17 +54,55 @@ function getColor(status) {
   }
 }
 
-// Create adaptive card for a single alert
-function createAdaptiveCard(alert, status) {
-  const alertname = alert.labels?.alertname || 'Unknown Alert';
-  const resourceName = alert.labels?.resourceName || 'N/A';
-  const summary = alert.annotations?.summary || '';
-  const description = alert.annotations?.description || '';
-  const details = alert.labels?.details || '';
+// Create adaptive card for a group of alerts
+function createGroupedAdaptiveCard(alertmanagerPayload) {
+  const alerts = alertmanagerPayload.alerts || [];
+  const status = alertmanagerPayload.status || 'unknown';
+  const groupName = alertmanagerPayload.groupLabels?.alertname || 'Alert Group';
+  const color = getColor(status);
+
+  // Table header
+  const columns = [
+    { title: 'Resource Name', width: 60 },
+    { title: 'Subject', width: 120 },
+    { title: 'Description', width: 120 },
+    { title: 'Details', width: 120 },
+    { title: 'Channel ID', width: 40 },
+  ];
+
+  // Table rows
+  const rows = alerts.map((alert) => {
+    const labels = alert.labels || {};
+    const annotations = alert.annotations || {};
+    const resourceName = labels.resourceName || '';
+    const subject = labels.subject || '';
+    const description = annotations.description || '';
+    const details = labels.details || '';
+    // Try to extract channel_id from details if present
+    let channelId = '';
+    const channelIdMatch = details.match(/channel_id: ([^|]+)/);
+    if (channelIdMatch) channelId = channelIdMatch[1];
+    return [resourceName, subject, description, details, channelId];
+  });
+
+  // Build table as FactSet (Adaptive Cards doesn't support real tables)
+  const factSet = [
+    {
+      type: 'FactSet',
+      facts: columns.map((col, i) => ({ title: col.title, value: '' })),
+    },
+    ...rows.map((row) => ({
+      type: 'FactSet',
+      facts: columns.map((col, i) => ({ title: '', value: row[i] || '' })),
+    })),
+  ];
+
+  // Card header
+  const headerText = `${groupName} Alarm Group (${status.toUpperCase()})`;
 
   return {
     type: 'message',
-    summary: `Prometheus Alert: ${alertname} - ${status.toUpperCase()}`,
+    summary: `Prometheus Alert: ${headerText}`,
     attachments: [
       {
         contentType: 'application/vnd.microsoft.card.adaptive',
@@ -75,39 +113,17 @@ function createAdaptiveCard(alert, status) {
           body: [
             {
               type: 'Container',
-              style: getColor(status),
+              style: color,
               items: [
                 {
                   type: 'TextBlock',
-                  text: alertname,
+                  text: headerText,
                   weight: 'Bolder',
                   size: 'Large',
                   wrap: true,
+                  spacing: 'Medium',
                 },
-                {
-                  type: 'TextBlock',
-                  text: `Resource Name: ${resourceName}`,
-                  wrap: true,
-                  spacing: 'Small',
-                },
-                {
-                  type: 'TextBlock',
-                  text: `Summary: ${summary}`,
-                  wrap: true,
-                  spacing: 'Small',
-                },
-                {
-                  type: 'TextBlock',
-                  text: `Description: ${description}`,
-                  wrap: true,
-                  spacing: 'Small',
-                },
-                {
-                  type: 'TextBlock',
-                  text: `Details: ${details}`,
-                  wrap: true,
-                  spacing: 'Small',
-                },
+                ...factSet,
               ],
             },
           ],
@@ -117,25 +133,22 @@ function createAdaptiveCard(alert, status) {
   };
 }
 
-// Send all alerts to Teams
+// Send grouped alerts to Teams as a single message
 async function sendAlertsToTeams(alertmanagerPayload) {
-  const alerts = alertmanagerPayload.alerts || [];
-  const status = alertmanagerPayload.status || 'unknown';
+  const adaptiveCard = createGroupedAdaptiveCard(alertmanagerPayload);
 
-  for (const alert of alerts) {
-    const adaptiveCard = createAdaptiveCard(alert, status);
+  // Log the adaptive card being sent
+  console.log('SENDING GROUPED ADAPTIVE CARD:');
+  console.log(JSON.stringify(adaptiveCard, null, 2));
+  console.log('='.repeat(80));
 
-    // Log the adaptive card being sent
-    console.log('SENDING ADAPTIVE CARD:');
-    console.log(JSON.stringify(adaptiveCard, null, 2));
-    console.log('='.repeat(80));
+  const response = await axios.post(WEBHOOK_URL, adaptiveCard, {
+    headers: { 'Content-Type': 'application/json' },
+  });
 
-    const response = await axios.post(WEBHOOK_URL, adaptiveCard, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    console.log(`✓ Successfully sent to Teams. Status: ${response.status}`);
-  }
+  console.log(
+    `✓ Successfully sent grouped alert to Teams. Status: ${response.status}`,
+  );
 }
 
 app.listen(PORT, () => {
