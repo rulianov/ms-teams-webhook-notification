@@ -72,7 +72,7 @@ function createGroupedAdaptiveCard(alertmanagerPayload) {
     const subject = labels.subject || 'N/A';
     const description = annotations.description || 'N/A';
     const details = labels.details || 'N/A';
-    
+
     // Try to extract channel_id from details if present
     let channelId = '';
     const channelIdMatch = details.match(/channel_id:\s*([^|]+)/);
