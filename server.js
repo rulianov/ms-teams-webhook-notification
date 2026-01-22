@@ -61,44 +61,56 @@ function createGroupedAdaptiveCard(alertmanagerPayload) {
   const groupName = alertmanagerPayload.groupLabels?.alertname || 'Alert Group';
   const color = getColor(status);
 
-  // Table header
-  const columns = [
-    { title: 'Resource Name', width: 60 },
-    { title: 'Subject', width: 120 },
-    { title: 'Description', width: 120 },
-    { title: 'Details', width: 120 },
-    { title: 'Channel ID', width: 40 },
-  ];
-
-  // Table rows
-  const rows = alerts.map((alert) => {
-    const labels = alert.labels || {};
-    const annotations = alert.annotations || {};
-    const resourceName = labels.resourceName || '';
-    const subject = labels.subject || '';
-    const description = annotations.description || '';
-    const details = labels.details || '';
-    // Try to extract channel_id from details if present
-    let channelId = '';
-    const channelIdMatch = details.match(/channel_id: ([^|]+)/);
-    if (channelIdMatch) channelId = channelIdMatch[1];
-    return [resourceName, subject, description, details, channelId];
-  });
-
-  // Build table as FactSet (Adaptive Cards doesn't support real tables)
-  const factSet = [
-    {
-      type: 'FactSet',
-      facts: columns.map((col, i) => ({ title: col.title, value: '' })),
-    },
-    ...rows.map((row) => ({
-      type: 'FactSet',
-      facts: columns.map((col, i) => ({ title: '', value: row[i] || '' })),
-    })),
-  ];
-
   // Card header
   const headerText = `${groupName} Alarm Group (${status.toUpperCase()})`;
+
+  // Build alert items - each alert as a separate container with facts
+  const alertItems = alerts.map((alert, index) => {
+    const labels = alert.labels || {};
+    const annotations = alert.annotations || {};
+    const resourceName = labels.resourceName || 'N/A';
+    const subject = labels.subject || 'N/A';
+    const description = annotations.description || 'N/A';
+    const details = labels.details || 'N/A';
+    
+    // Try to extract channel_id from details if present
+    let channelId = '';
+    const channelIdMatch = details.match(/channel_id:\s*([^|]+)/);
+    if (channelIdMatch) {
+      channelId = channelIdMatch[1].trim();
+    }
+
+    const facts = [
+      { title: 'Resource Name', value: resourceName },
+      { title: 'Subject', value: subject },
+      { title: 'Description', value: description },
+      { title: 'Details', value: details },
+    ];
+
+    // Only add Channel ID if it exists
+    if (channelId) {
+      facts.push({ title: 'Channel ID', value: channelId });
+    }
+
+    return {
+      type: 'Container',
+      separator: index > 0, // Add separator between alerts
+      spacing: 'Medium',
+      items: [
+        {
+          type: 'TextBlock',
+          text: `Alert ${index + 1}`,
+          weight: 'Bolder',
+          size: 'Medium',
+          wrap: true,
+        },
+        {
+          type: 'FactSet',
+          facts: facts,
+        },
+      ],
+    };
+  });
 
   return {
     type: 'message',
@@ -121,11 +133,17 @@ function createGroupedAdaptiveCard(alertmanagerPayload) {
                   weight: 'Bolder',
                   size: 'Large',
                   wrap: true,
-                  spacing: 'Medium',
                 },
-                ...factSet,
+                {
+                  type: 'TextBlock',
+                  text: `Total Alerts: ${alerts.length}`,
+                  weight: 'Bolder',
+                  spacing: 'Small',
+                  wrap: true,
+                },
               ],
             },
+            ...alertItems,
           ],
         },
       },
